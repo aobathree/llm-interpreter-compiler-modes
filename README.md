@@ -32,6 +32,12 @@ python tools/daily_brief.py                  # 既定: btc_jpy eth_jpy xrp_jpy
 python tools/daily_brief.py btc_jpy sol_jpy  # ペア指定
 ```
 
+[uv](https://docs.astral.sh/uv/) ユーザーはこちらでも実行できます（依存パッケージは標準ライブラリのみなので、仮想環境の準備は不要です）。
+
+```bash
+uv run tools/daily_brief.py
+```
+
 1ペアあたり3行の圧縮ダイジェストが出力されます。これを LLM に読ませれば、
 生のローソク足JSON（数万トークン）を一切コンテキストに入れずに日次分析ができます。
 出力の読み方は [tools/daily_brief.md](tools/daily_brief.md) を参照してください。
