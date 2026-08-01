@@ -12,8 +12,9 @@ LLM活用の二相モデル——初回は LLM による試行錯誤で手順を
 | [docs/article-llm-interpreter-compiler-modes.pdf](docs/article-llm-interpreter-compiler-modes.pdf) | 記事のPDF版（A4・2ページ。印刷原稿は同フォルダーの article-print-source.html） |
 | [llm-interpreter-compile-mode-ChatGPT.md](llm-interpreter-compile-mode-ChatGPT.md) | ChatGPT との対話ドラフト（概念の体系化） |
 | [llm-interpreter-compile-mode-Cursor.md](llm-interpreter-compile-mode-Cursor.md) | Cursor との対話ドラフト（業界潮流・設計課題） |
-| [tools/daily_brief.py](tools/daily_brief.py) | 実証コード：暗号通貨の日次商い状況を約0.4秒で集計するスクリプト |
+| [tools/daily_brief.py](tools/daily_brief.py) | 実証コード：暗号通貨の日次商い状況を集計するスクリプト（Python） |
 | [tools/daily_brief.md](tools/daily_brief.md) | daily_brief.py の設計意図と運用ノート |
+| [rust/](rust/) | daily_brief の Rust 実装（fetch全並列化・ネイティブバイナリ） |
 
 ## すぐ実験する
 
@@ -37,6 +38,31 @@ python tools/daily_brief.py btc_jpy sol_jpy  # ペア指定
 ```bash
 uv run tools/daily_brief.py
 ```
+
+### Rust版（さらに「コンパイル」を推し進めた実装）
+
+出力フォーマットは Python 版と同一のまま、ネイティブバイナリ化し、
+fetch（ペア × 時間枠 = 6回の CLI 呼び出し）をすべて並列実行します。
+
+```bash
+cd rust
+cargo build --release
+./target/release/daily_brief
+```
+
+実測（3ペア・中央値、Windows 11 / 単発の `bitbank candles` 呼び出し ≈ 0.1秒の環境）:
+
+| 実装 | 実行時間 | 備考 |
+|---|---|---|
+| Python 版 | 約 0.6 秒 | 6回の fetch が逐次 |
+| Rust 版 | **約 0.11 秒** | 6回の fetch を並列化 → 実質1回分の待ち時間 |
+
+約5倍の高速化ですが、内訳は「Rustだから速い」ではなく、
+①インタープリター起動が消えたこと、②fetch の並列化、が大半です。
+計算部分（SMA/RSI/MACD/ATR）はどちらの実装でも数ミリ秒以下であり、
+律速はネットワークです。コンパイル・モードの本当の価値は速度そのものより、
+「手順が決定的なコードに固定されているからこそ、こうした並列化などの
+古典的な最適化が安全に適用できる」点にあります。
 
 1ペアあたり3行の圧縮ダイジェストが出力されます。これを LLM に読ませれば、
 生のローソク足JSON（数万トークン）を一切コンテキストに入れずに日次分析ができます。

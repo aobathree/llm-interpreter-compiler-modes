@@ -1,0 +1,13 @@
+[package]
+name = "daily_brief"
+version = "0.1.0"
+edition = "2021"
+description = "bitbank daily brief — compiled-mode digest generator (Rust port of tools/daily_brief.py)"
+license = "MIT"
+
+[dependencies]
+serde_json = "1"
+chrono = "0.4"
+
+[profile.release]
+lto = true
