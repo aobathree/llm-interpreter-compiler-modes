@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>LLMのインタープリター・モードとコンパイル・モード（改訂版）</title>
+<style>
+  @page { size: A4; margin: 11mm 14mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Yu Gothic", "Meiryo", sans-serif;
+    font-size: 9.2pt;
+    line-height: 1.5;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 15pt; margin: 0 0 2pt 0; line-height: 1.3; }
+  .subtitle { font-size: 9.5pt; color: #444; margin: 0 0 6pt 0; }
+  .byline { font-size: 8.4pt; color: #333; margin: 0 0 7pt 0; line-height: 1.5;
+            border-bottom: 1.5px solid #1a1a1a; padding-bottom: 6pt; }
+  h2 { font-size: 11pt; margin: 8pt 0 3pt 0; padding-left: 6pt;
+       border-left: 4px solid #2b6cb0; line-height: 1.3; }
+  p { margin: 0 0 4.5pt 0; text-align: justify; }
+  pre {
+    font-family: "MS Gothic", "BIZ UDGothic", monospace;
+    font-size: 7.5pt;
+    line-height: 1.3;
+    background: #f5f7fa;
+    border: 1px solid #d8dee6;
+    border-radius: 3px;
+    padding: 4pt 6pt;
+    margin: 4pt 0 5pt 0;
+    overflow: hidden;
+  }
+  code { font-family: "MS Gothic", "BIZ UDGothic", monospace; font-size: 8.8pt;
+         background: #f0f2f5; padding: 0 2pt; border-radius: 2px; }
+  strong { font-weight: bold; }
+  .pagebreak { page-break-before: always; }
+  table.bench { border-collapse: collapse; font-size: 8.8pt; margin: 4pt 0 6pt 0; }
+  table.bench th, table.bench td { border: 1px solid #b8c2cc; padding: 2.5pt 8pt; text-align: left; }
+  table.bench th { background: #eef2f6; }
+  .glossary { font-size: 7.1pt; line-height: 1.38; column-count: 2; column-gap: 14pt; margin-top: 3pt; }
+  .glossary ol { margin: 0; padding-left: 14pt; }
+  .glossary li { margin-bottom: 2.5pt; }
+  hr.gsep { border: none; border-top: 1.5px solid #1a1a1a; margin: 7pt 0 3pt 0; }
+  .gtitle { font-size: 10pt; font-weight: bold; margin: 0 0 3pt 0; }
+  sup { font-size: 7pt; }
+  a { color: #2b6cb0; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<h1>LLMのインタープリター・モードとコンパイル・モード</h1>
+<p class="subtitle">— 探索はLLMに、確立した手順は決定的なコードに。bitbank-lab-cli による実証 —</p>
+<p class="byline">
+著者: <strong>aobathree</strong>（ChatGPT・Claude・Cursor の助けを借りて作成）｜初版 2026年8月1日／<strong>改訂版 2026年8月2日</strong>（Rust実験を追記）<br>
+リポジトリ: <strong>https://github.com/aobathree/llm-interpreter-compiler-modes</strong>（本稿・ドラフト・実証コードを収録）
+</p>
+
+<h2>はじめに：こんなアイデアは成り立つでしょうか</h2>
+<p>同じAPI<sup>[1]</sup> の上に、MCP<sup>[2]</sup> と CLI<sup>[3]</sup> という二つの入口があるとします。初回は MCP を使い、LLM に多くのトークン<sup>[4]</sup> と時間をかけて調査・計画・実行をしてもらう。これを<strong>インタープリター・モード</strong>と呼びます。2回目以降は、確立した同じ手順を「コンパイル」して、CLI を使ったスクリプトとして高速・低コストで再実行する。これが<strong>コンパイル・モード</strong>です。</p>
+
+<pre>【インタープリター・モード（初回）】
+  ユーザー ─→ LLM ─→ MCP ─→ API
+              ↑ 試行錯誤しながら手順を発見
+              （柔軟。ただし遅く、トークン消費が大きい）
+
+【コンパイル・モード（2回目以降）】
+  ユーザー ─→ スクリプト ─→ CLI ─→ API
+              ↑ 発見済みの手順をそのまま実行
+              （高速・安価・毎回同じ結果）
+                          図1: 二つのモード</pre>
+
+<p>このアイデアは成り立つのか、それとも既に当たり前なのか——ChatGPT と Cursor に問いかけた回答と、bitbank-lab-cli での実例をまとめたのが本稿です。</p>
+
+<h2>概念の整理：「探索」と「実行」を分ける</h2>
+<p>両者の回答は一致していました。<strong>このアイデアは成り立ち、業界もまさにその方向へ収束しつつある</strong>、というものです。</p>
+<p>本質は、「未知の問題の手順を<strong>発見</strong>するフェーズ」と「発見済みの手順を<strong>再実行</strong>するフェーズ」の分離にあります。前者は柔軟ですが遅く高価、後者は高速・安価で、毎回同じ結果が得られます。さらに、想定外が起きたときだけ LLM に戻る「再探索」を加えると、全体は次のようなループになります。</p>
+
+<pre>   ①探索（インタープリター・モード）
+      LLMがMCPで試行錯誤し、手順を発見する
+        │
+        ▼
+ ┌─→②コンパイル
+ │     固定できる処理／可変にすべき値／LLMに残す判断を分離し、
+ │     スクリプトに変換する
+ │       │
+ │       ▼
+ │   ③高速実行（コンパイル・モード）＝毎日の運用
+ │       │
+ │       ├─ 想定内 ────→ 高速に完了（翌日また③を実行）
+ │       │
+ │       └─ ガード失敗（想定外）
+ │            │
+ │            ▼
+ └──────④再探索：LLMが壊れた部分だけ調査し、修正して②へ
+              図2: 探索→コンパイル→実行→再探索のループ</pre>
+
+<p>これは、事前に全部を機械語にしてしまう AOTコンパイル<sup>[5]</sup> というより、実際の実行の様子を観察してから最適化する <strong>JITコンパイル</strong><sup>[6]</sup> に近い構図です。想定外のときに一段遅いモードへ戻る④は、JIT でいう「脱最適化」<sup>[7]</sup> に相当します。</p>
+<p>この方向性は業界の潮流とも一致します。Cloudflare の Code Mode や Anthropic の「Code execution with MCP」は「MCPツールを一つずつ LLM に呼ばせるのではなく、コードを書かせて実行するほうが速くて安い」という同じ問題意識を扱っていますし、Agent Skills<sup>[8]</sup> は確立した手順の資産化にあたります。研究の世界でも Voyager や DSPy など先行例の系譜があります。ただし、図2のループ全体——フォールバックと再コンパイルまで含めたライフサイクル——を一貫した体験として設計した例はまだ少なく、体系化の余地が大きい領域です。</p>
+
+<div class="pagebreak"></div>
+
+<h2>何をコンパイルできるのか</h2>
+<p>手順のすべてをスクリプトにできるわけではありません。LLM の実行履歴は、次の三種類に分解して扱う必要があります。</p>
+
+<pre>  LLMの実行履歴
+   ├─ ① 完全に固定できる処理     → 純粋なコードへ
+   │    （API取得・集計・形式変換・保存）
+   ├─ ② 可変にすべき値           → 入力変数へ
+   │    （前回の「BTC」を ${pair} に置き換える）
+   └─ ③ 意味的な判断が残る処理   → 小さなLLM呼び出しとして残す
+        （「重要なものだけ選ぶ」「異常なら深掘りする」）
+              図3: コンパイル時の三分解</pre>
+
+<p>つまり最適な結果は「LLM を完全に消したスクリプト」とは限らず、多くの場合は「<strong>決定論的な骨格 ＋ 少数の限定された LLM 判断 ＋ 異常時の LLM 復帰</strong>」という構成になります。また、単純な「記録して再生」では、たまたま必要だったリトライの誤固定や、値のハードコード、書き込みの二重実行などで壊れます。可変値の識別、冪等性<sup>[9]</sup> への配慮、想定外を検知するガード条件、コンパイル直後に同じ入力で結果一致を確かめるゴールデンテスト<sup>[10]</sup> が最低限必要です。</p>
+
+<h2>実例：bitbank-lab-cli の daily_brief.py</h2>
+<p>このモデルを、暗号通貨の日次「商い状況」分析で実際に運用しています。</p>
+<p><strong>インタープリター・モード（初回）</strong>では、<code>bitbank candles</code> で数百本×複数ペアの生のローソク足<sup>[11]</sup> JSONを取得し、LLM がそれを読み込んで SMA や RSI などのテクニカル指標<sup>[12]</sup> を手計算していました。生JSONだけで数万トークンを消費し、計算は遅く、桁ミスの検算コストもかかります。ただ、この試行錯誤を通じて「毎日見るべき指標と出力の形」が確定しました。</p>
+<p><strong>コンパイル・モード（2回目以降）</strong>では、確定した手順を <code>tools/daily_brief.py</code> に固定化しました。計算はすべて Python 側で行い、LLM は1ペア3行の圧縮ダイジェストだけを読みます。</p>
+
+<pre>【従来】 bitbank ─→ 生JSON（数万トークン）─→ LLMが読む＆手計算 ─→ 要約
+                      ￣￣￣￣￣￣￣￣￣￣￣ ここが重い
+
+【改善】 bitbank ─→ daily_brief.py が計算 ─→ ダイジェスト10行 ─→ LLMは10行だけ読む
+                      計算0.44秒                 ￣￣￣￣￣￣￣￣ 軽い！
+              図4: daily_brief.py によるトークン削減</pre>
+
+<p>スクリプト本体と設計ノートは上記リポジトリの <code>tools/</code> に収録しています。Python 3.9+ と bitbank-lab-cli（APIキー不要）があれば、<code>python tools/daily_brief.py</code> だけでこの実験をそのまま再現できます。</p>
+<p>実測の効果は、実行時間<strong>約0.44秒</strong>（2ペア）、LLM が読む量は<strong>数万トークン → 10行弱</strong>、指標の手計算・検算は<strong>ゼロ</strong>です。取得本数を増やしても LLM のトークン消費は一定のままです。図3の三分解も実践しています——対象ペアは引数や環境変数で指定できるようにし（②）、確定足のみで計算する・ペア単位でエラーを閉じ込めるといったガードを備え（①）、「ダイジェストへの一言コメント」だけを LLM に残しています（③）。運用の合言葉は「daily brief 回して」。LLM はスクリプトを実行し、出てきた10行だけを読んでコメントを添えます。</p>
+
+<div class="pagebreak"></div>
+
+<h2>コンパイルを推し進める：Rust移植の実験（8/2追記）</h2>
+<p>コンパイル・モードはどこまで速くできるのでしょうか。<code>daily_brief.py</code> を Rust<sup>[13]</sup> に移植して（リポジトリの <code>rust/</code> に収録）、実測してみました。出力フォーマットはPython版と1文字単位で同一です。変えたのは実行モデルだけ——ネイティブバイナリ化と、fetch（3ペア×日足・時足＝6回のCLI呼び出し）の全並列化<sup>[14]</sup> です。</p>
+
+<pre> 【第0段】インタープリター・モード
+     LLMが生JSONを読んで手計算 …… 数万トークン・分オーダー
+       │ 手順をスクリプトに固定（コンパイル）
+       ▼
+ 【第1段】Python版 daily_brief.py …… 約0.6秒
+       │ ネイティブ化＋fetch並列化（さらにコンパイル）
+       ▼
+ 【第2段】Rust版 …… 約0.11秒
+              図5: コンパイルの深化と実測値</pre>
+
+<table class="bench">
+<tr><th>実装</th><th>実行時間（3ペア・中央値）</th><th>備考</th></tr>
+<tr><td>Python版</td><td>約0.6秒</td><td>6回のfetchが逐次</td></tr>
+<tr><td>Rust版</td><td><strong>約0.11秒（約5倍）</strong></td><td>6回のfetchを並列化 → 実質1回分の待ち時間</td></tr>
+</table>
+
+<p>計測して分かったのは、律速がネットワークだということです。単発の <code>bitbank candles</code> 呼び出しは約0.1秒で、Python版はこれを6回順番に待つため約0.6秒かかります。Rust版は6回を同時に投げるので、待ち時間が実質1回分に圧縮されます。指標計算（SMA/RSI/MACD/ATR）そのものはどちらの実装でも数ミリ秒以下で、差にはなりません。</p>
+<p>ここから得られる教訓は「Rustだから速い」ではありません。<strong>手順が決定的なコードに固定されている——つまりコンパイル済みである——からこそ、並列化という古典的な最適化を安全に適用できた</strong>、という点です。もしLLMの判断が実行パスに挟まっていたら、「6回の呼び出しを同時に投げてよいか」をそのつど推論することになります。数万トークン→10行という第0段→第1段の跳躍に比べれば地味ですが、この実験は「コンパイルには深さの段階がある」ことを示しています。</p>
+
+<h2>まとめ</h2>
+<p>「LLM は初回の探索と手順発見に使い、確立した手順は決定的なコードに落として再利用する」という二相モデルは成り立ち、業界もその方向へ向かっています。価値の中心は個々の技術ではなく、<strong>探索 → 記録 → 三分解 → コンパイル → 高速実行 → 想定外だけ LLM へ復帰 → 再コンパイル</strong>というループ（図2）を一つの体験として統合することにあります。daily_brief.py はその最小の実装です。次の課題は、相関分析やボラティリティ分析など、同じ型の横展開です。</p>
+
+<hr class="gsep">
+<p class="gtitle">用語注釈</p>
+<div class="glossary">
+<ol>
+<li><strong>API</strong>: ソフトウェア同士が機能を呼び出し合うための窓口。ここでは bitbank の価格データ取得サービスなどを指します。</li>
+<li><strong>MCP</strong> (Model Context Protocol): LLM が外部のツールやデータを呼び出すための標準的な接続方式。LLM が「自分で道具を選んで使う」ための仕組みです。</li>
+<li><strong>CLI</strong> (Command Line Interface): コマンド（文字列の命令）でソフトウェアを操作する方式。人にもスクリプトにも同じように呼び出せるのが特長です。</li>
+<li><strong>トークン</strong>: LLM が文章を処理する最小単位。日本語なら概ね1〜2文字で1トークン。LLM の利用料金と処理時間はトークン量に比例します。</li>
+<li><strong>AOTコンパイル</strong> (Ahead-Of-Time): プログラムを実行前にあらかじめ全部機械語に変換しておく方式。</li>
+<li><strong>JITコンパイル</strong> (Just-In-Time): プログラムを実行しながら、よく使う部分だけをその場で機械語に変換して高速化する方式。実際の動きを観察してから最適化する点が本稿のアイデアに似ています。</li>
+<li><strong>脱最適化</strong> (deoptimization): JIT で高速化した部分が前提と合わなくなったとき、いったん遅いが確実な実行方式へ戻すこと。</li>
+<li><strong>Agent Skills</strong>: Claude Code や Cursor などで、確立した作業手順を手順書ファイルとして保存し、次回以降に再利用する仕組み。</li>
+<li><strong>冪等性</strong>（べきとうせい）: 同じ処理を何回実行しても結果が1回のときと変わらない性質。二重登録などの事故を防ぐ鍵になります。</li>
+<li><strong>ゴールデンテスト</strong>: 正解とみなす出力（ゴールデン）をあらかじめ保存しておき、変更後も同じ入力から同じ出力が得られるか照合するテスト手法。</li>
+<li><strong>ローソク足</strong>: 一定期間の始値・高値・安値・終値をまとめた、相場チャートの標準的なデータ形式。</li>
+<li><strong>テクニカル指標</strong>（SMA・RSI・MACD・ATR）: 価格の推移から計算する分析値。SMA は移動平均、RSI は買われすぎ・売られすぎの目安、MACD はトレンドの勢い、ATR は変動幅の大きさを表します。</li>
+<li><strong>Rust</strong>: 実行前に機械語へ変換される（コンパイルされる）プログラミング言語。起動が速く、複数の処理を同時に走らせる並列実行を安全に書けることで知られます。</li>
+<li><strong>並列化（並列実行）</strong>: 複数の処理を同時に走らせること。本稿では6回のデータ取得を同時に行い、待ち時間を1回分に圧縮しました。</li>
+</ol>
+</div>
+
+</body>
+</html>
