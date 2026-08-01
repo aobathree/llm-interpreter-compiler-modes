@@ -9,6 +9,7 @@ LLM活用の二相モデル——初回は LLM による試行錯誤で手順を
 | ファイル | 説明 |
 |---|---|
 | [article-llm-interpreter-compiler-modes.md](article-llm-interpreter-compiler-modes.md) | 本編記事（図解入り・用語注釈付き） |
+| [docs/article-llm-interpreter-compiler-modes.pdf](docs/article-llm-interpreter-compiler-modes.pdf) | 記事のPDF版（A4・2ページ。印刷原稿は同フォルダーの article-print-source.html） |
 | [llm-interpreter-compile-mode-ChatGPT.md](llm-interpreter-compile-mode-ChatGPT.md) | ChatGPT との対話ドラフト（概念の体系化） |
 | [llm-interpreter-compile-mode-Cursor.md](llm-interpreter-compile-mode-Cursor.md) | Cursor との対話ドラフト（業界潮流・設計課題） |
 | [tools/daily_brief.py](tools/daily_brief.py) | 実証コード：暗号通貨の日次商い状況を約0.4秒で集計するスクリプト |
