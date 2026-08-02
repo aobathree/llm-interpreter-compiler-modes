@@ -15,8 +15,9 @@ LLM活用の二相モデル——初回は LLM による試行錯誤で手順を
 | [llm-interpreter-compile-mode-Cursor.md](llm-interpreter-compile-mode-Cursor.md) | Cursor との対話ドラフト（業界潮流・設計課題） |
 | [tools/daily_brief.py](tools/daily_brief.py) | 実証コード：暗号通貨の日次商い状況を集計するスクリプト（Python） |
 | [tools/daily_brief.md](tools/daily_brief.md) | daily_brief.py の設計意図と運用ノート |
-| [rust/](rust/) | daily_brief の Rust 実装（fetch並列化・ネイティブバイナリ） |
-| [benchmark/](benchmark/) | スケーリング実験（トップ10/20/30/全62銘柄の実行時間計測とレート制限の考察） |
+| [rust/](rust/) | daily_brief の Rust 実装（`bitbank` CLI をサブプロセス起動・fetch並列化） |
+| [rust-direct/](rust-direct/) | REST API 直接版（プロセス生成ゼロ・接続プーリング。出力は同一） |
+| [benchmark/](benchmark/) | スケーリング実験＋CLI版 vs 直接API版の比較（レート制限の考察含む） |
 
 ## すぐ実験する
 
@@ -69,6 +70,10 @@ cargo build --release
 銘柄数を増やしたときの挙動（全62銘柄で約1.2秒、無制限並列だとレート制限を踏む話）は
 [benchmark/results.md](benchmark/results.md) を参照してください。同時 fetch 数は既定16で、
 環境変数 `BITBANK_BRIEF_CONCURRENCY` で変更できます。
+
+さらに `bitbank` CLI を経由せず REST API を直接呼ぶ [rust-direct/](rust-direct/) もあります
+（出力は1文字単位で同一。62銘柄で約1.2倍・分散大幅減。詳細と考察は
+[benchmark/results-direct.md](benchmark/results-direct.md)）。
 
 ```bash
 ./target/release/daily_brief btc_jpy eth_jpy sol_jpy doge_jpy  # 任意の銘柄数でOK
