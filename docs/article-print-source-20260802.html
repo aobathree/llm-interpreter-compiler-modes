@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>LLMのインタープリター・モードとコンパイル・モード（改訂版）</title>
+<title>LLMのインタープリター／コンパイル・モード（改訂版 2026-08-02）</title>
 <style>
   @page { size: A4; margin: 11mm 14mm; }
   * { box-sizing: border-box; }
@@ -291,7 +291,12 @@ document.querySelectorAll('pre.mermaid svg').forEach((svg) => {
   svg.replaceWith(img);
 });
 await Promise.all(loads);
-document.title = 'MERMAID_DONE ' + ok + '/' + document.querySelectorAll('pre.mermaid img').length;
+// 描画検証値はタブ名（=PDFタイトル）を汚さないよう隠し要素に記録する
+const st = document.createElement('div');
+st.id = 'mermaid-status';
+st.hidden = true;
+st.textContent = ok + '/' + document.querySelectorAll('pre.mermaid img').length;
+document.body.appendChild(st);
 </script>
 </body>
 </html>
