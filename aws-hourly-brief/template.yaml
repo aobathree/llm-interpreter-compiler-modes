@@ -8,11 +8,11 @@ Description: >
 Parameters:
   WebhookParamName:
     Type: String
-    Default: /aws-hourly-brief/discord-webhook
+    Default: /hourly-brief/discord-webhook
     Description: SSM SecureString parameter holding the Discord webhook URL
   TokenParamName:
     Type: String
-    Default: /aws-hourly-brief/config-token
+    Default: /hourly-brief/config-token
     Description: SSM SecureString parameter holding the config API shared token
   ScheduleExpression:
     Type: String

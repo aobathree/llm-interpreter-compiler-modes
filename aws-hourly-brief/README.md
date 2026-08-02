@@ -34,11 +34,11 @@ export PATH="$(cygpath -u "$(python -c 'import ziglang,os;print(os.path.dirname(
 ### 1. シークレットを SSM に登録（初回のみ）
 
 ```bash
-aws ssm put-parameter --name /aws-hourly-brief/discord-webhook --type SecureString --value "https://discord.com/api/webhooks/..."
+aws ssm put-parameter --name /hourly-brief/discord-webhook --type SecureString --value "https://discord.com/api/webhooks/..."
 ```
 
 ```bash
-aws ssm put-parameter --name /aws-hourly-brief/config-token --type SecureString --value "任意の長いランダム文字列"
+aws ssm put-parameter --name /hourly-brief/config-token --type SecureString --value "任意の長いランダム文字列"
 ```
 
 ### 2. ビルドとデプロイ
