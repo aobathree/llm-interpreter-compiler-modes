@@ -18,7 +18,7 @@ LLM活用の二相モデル——初回は LLM による試行錯誤で手順を
 | [rust/](rust/) | daily_brief の Rust 実装（`bitbank` CLI をサブプロセス起動・fetch並列化） |
 | [rust-direct/](rust-direct/) | REST API 直接版（プロセス生成ゼロ・接続プーリング。出力は同一） |
 | [benchmark/](benchmark/) | スケーリング実験＋CLI版 vs 直接API版の比較（時間・リソース消費・レート制限の考察） |
-| [aws-hourly-brief/](aws-hourly-brief/) | AWS運用の設計書（毎時実行→Discord配信、DynamoDBで銘柄を動的変更） |
+| [aws-hourly-brief/](aws-hourly-brief/) | AWS実運用（毎時実行→Discord配信、DynamoDBで銘柄を動的変更。[稼働中の画面](#実運用スクリーンショット)） |
 
 ## すぐ実験する
 
@@ -83,6 +83,17 @@ cargo build --release
 1ペアあたり3行の圧縮ダイジェストが出力されます。これを LLM に読ませれば、
 生のローソク足JSON（数万トークン）を一切コンテキストに入れずに日次分析ができます。
 出力の読み方は [tools/daily_brief.md](tools/daily_brief.md) を参照してください。
+
+## 実運用スクリーンショット
+
+[aws-hourly-brief/](aws-hourly-brief/) は実際にAWS上で稼働しています（2026-08-02〜）。
+毎時、Discord にダイジェストが届きます：
+
+![Discordに届いた毎時ダイジェスト](screenshot/aobathree%20cc%20hourly%20brief%202026-08-02.png)
+
+配信対象の銘柄は、静的HTML 1枚のGUIからいつでも変更できます（保存すると次回配信から反映。デプロイ不要）：
+
+![銘柄選択GUI](screenshot/aobathree%20cc%20selection%20menu%202026-08-02.png)
 
 ## 記事の要旨
 
