@@ -17,7 +17,7 @@ LLM活用の二相モデル——初回は LLM による試行錯誤で手順を
 | [tools/daily_brief.md](tools/daily_brief.md) | daily_brief.py の設計意図と運用ノート |
 | [rust/](rust/) | daily_brief の Rust 実装（`bitbank` CLI をサブプロセス起動・fetch並列化） |
 | [rust-direct/](rust-direct/) | REST API 直接版（プロセス生成ゼロ・接続プーリング。出力は同一） |
-| [benchmark/](benchmark/) | スケーリング実験＋CLI版 vs 直接API版の比較（レート制限の考察含む） |
+| [benchmark/](benchmark/) | スケーリング実験＋CLI版 vs 直接API版の比較（時間・リソース消費・レート制限の考察） |
 
 ## すぐ実験する
 
