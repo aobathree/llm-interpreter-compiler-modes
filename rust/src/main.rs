@@ -2,7 +2,8 @@
 //!
 //! 出力フォーマットは Python 版と同一。違いは実行モデルのみ:
 //! - ネイティブバイナリ（インタープリター起動なし）
-//! - fetch（ペア × 時間枠）を全並列実行
+//! - fetch（ペア × 時間枠）を並列実行（同時数上限は既定16、
+//!   BITBANK_BRIEF_CONCURRENCY で変更可）
 //!
 //! 使い方:
 //!   daily_brief                     # 既定ペア(btc_jpy eth_jpy xrp_jpy)
@@ -14,8 +15,49 @@
 use chrono::{Datelike, FixedOffset, TimeZone, Utc};
 use serde_json::Value;
 use std::process::Command;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Mutex, OnceLock};
 
 const WD: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/// 同時 fetch 数の上限。銘柄数が多いとき、無制限の並列バーストは
+/// API レート制限を踏んで大きな遅延を招く（benchmark/results.md 参照）。
+/// 既定 16。環境変数 BITBANK_BRIEF_CONCURRENCY で変更可。
+struct Semaphore {
+    tx: Sender<()>,
+    rx: Mutex<Receiver<()>>,
+}
+struct Permit<'a>(&'a Semaphore);
+impl Semaphore {
+    fn new(n: usize) -> Self {
+        let (tx, rx) = channel();
+        for _ in 0..n {
+            tx.send(()).unwrap();
+        }
+        Semaphore { tx, rx: Mutex::new(rx) }
+    }
+    fn acquire(&self) -> Permit<'_> {
+        self.rx.lock().unwrap().recv().expect("semaphore closed");
+        Permit(self)
+    }
+}
+impl Drop for Permit<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.tx.send(());
+    }
+}
+
+fn fetch_semaphore() -> &'static Semaphore {
+    static S: OnceLock<Semaphore> = OnceLock::new();
+    S.get_or_init(|| {
+        let n = std::env::var("BITBANK_BRIEF_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&n| n >= 1)
+            .unwrap_or(16);
+        Semaphore::new(n)
+    })
+}
 
 fn jst() -> FixedOffset {
     FixedOffset::east_opt(9 * 3600).unwrap()
@@ -39,6 +81,7 @@ fn num(v: &Value) -> Option<f64> {
 }
 
 fn fetch(pair: &str, tf: &str, limit: u32) -> Result<(Vec<Candle>, bool), String> {
+    let _permit = fetch_semaphore().acquire();
     let out = Command::new("bitbank")
         .args([
             "candles",

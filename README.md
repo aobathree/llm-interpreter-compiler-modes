@@ -15,7 +15,8 @@ LLM活用の二相モデル——初回は LLM による試行錯誤で手順を
 | [llm-interpreter-compile-mode-Cursor.md](llm-interpreter-compile-mode-Cursor.md) | Cursor との対話ドラフト（業界潮流・設計課題） |
 | [tools/daily_brief.py](tools/daily_brief.py) | 実証コード：暗号通貨の日次商い状況を集計するスクリプト（Python） |
 | [tools/daily_brief.md](tools/daily_brief.md) | daily_brief.py の設計意図と運用ノート |
-| [rust/](rust/) | daily_brief の Rust 実装（fetch全並列化・ネイティブバイナリ） |
+| [rust/](rust/) | daily_brief の Rust 実装（fetch並列化・ネイティブバイナリ） |
+| [benchmark/](benchmark/) | スケーリング実験（トップ10/20/30/全62銘柄の実行時間計測とレート制限の考察） |
 
 ## すぐ実験する
 
@@ -64,6 +65,14 @@ cargo build --release
 律速はネットワークです。コンパイル・モードの本当の価値は速度そのものより、
 「手順が決定的なコードに固定されているからこそ、こうした並列化などの
 古典的な最適化が安全に適用できる」点にあります。
+
+銘柄数を増やしたときの挙動（全62銘柄で約1.2秒、無制限並列だとレート制限を踏む話）は
+[benchmark/results.md](benchmark/results.md) を参照してください。同時 fetch 数は既定16で、
+環境変数 `BITBANK_BRIEF_CONCURRENCY` で変更できます。
+
+```bash
+./target/release/daily_brief btc_jpy eth_jpy sol_jpy doge_jpy  # 任意の銘柄数でOK
+```
 
 1ペアあたり3行の圧縮ダイジェストが出力されます。これを LLM に読ませれば、
 生のローソク足JSON（数万トークン）を一切コンテキストに入れずに日次分析ができます。
