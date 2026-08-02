@@ -18,6 +18,7 @@ LLM活用の二相モデル——初回は LLM による試行錯誤で手順を
 | [rust/](rust/) | daily_brief の Rust 実装（`bitbank` CLI をサブプロセス起動・fetch並列化） |
 | [rust-direct/](rust-direct/) | REST API 直接版（プロセス生成ゼロ・接続プーリング。出力は同一） |
 | [benchmark/](benchmark/) | スケーリング実験＋CLI版 vs 直接API版の比較（時間・リソース消費・レート制限の考察） |
+| [aws-hourly-brief/](aws-hourly-brief/) | AWS運用の設計書（毎時実行→Discord配信、DynamoDBで銘柄を動的変更） |
 
 ## すぐ実験する
 
