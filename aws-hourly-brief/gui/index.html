@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aws-hourly-brief 銘柄設定</title>
+<style>
+  body { font-family: "Yu Gothic", Meiryo, sans-serif; max-width: 720px;
+         margin: 24px auto; padding: 0 16px; color: #1a1a1a; }
+  h1 { font-size: 1.3rem; }
+  fieldset { border: 1px solid #ccc; border-radius: 6px; margin-bottom: 14px; }
+  legend { font-weight: bold; }
+  label { display: inline-block; margin: 2px 0; }
+  #pairs label { width: 31%; font-family: Consolas, monospace; font-size: 0.9rem; }
+  input[type=text], input[type=password], input[type=number] {
+    padding: 4px 6px; border: 1px solid #aaa; border-radius: 4px; }
+  #api-url { width: 100%; }
+  button { padding: 8px 22px; border: none; border-radius: 6px;
+           background: #2b6cb0; color: #fff; font-size: 1rem; cursor: pointer; }
+  button:disabled { background: #999; }
+  #status { margin-top: 10px; white-space: pre-wrap; font-size: 0.9rem; }
+  .ok { color: #2b8a3e; } .err { color: #c92a2a; }
+  .muted { color: #666; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>aws-hourly-brief 銘柄設定</h1>
+<p class="muted">保存すると次回の毎時配信から反映されます（デプロイ不要）。</p>
+
+<fieldset>
+  <legend>接続先</legend>
+  <label>Config API URL（CloudFormation 出力 ConfigApiUrl）<br>
+    <input type="text" id="api-url" placeholder="https://xxxx.lambda-url.ap-northeast-1.on.aws/"></label><br>
+  <label>トークン <input type="password" id="token"></label>
+  <button id="load" style="padding:4px 12px">読み込み</button>
+</fieldset>
+
+<fieldset>
+  <legend>配信モード</legend>
+  <label><input type="radio" name="mode" value="pairs" checked> pairs — 下で選んだ銘柄</label><br>
+  <label><input type="radio" name="mode" value="top"> top — 売買代金上位
+    <input type="number" id="top-n" value="10" min="1" max="100" style="width:4em"> 銘柄</label><br>
+  <label><input type="radio" name="mode" value="all"> all — 全銘柄</label><br>
+  <label><input type="checkbox" id="enabled" checked> 配信を有効にする</label><br>
+  <label><input type="checkbox" id="delivery-file"> ファイル添付モード（銘柄数が多いとき向け）</label>
+</fieldset>
+
+<fieldset>
+  <legend>銘柄（売買代金降順）</legend>
+  <div id="pairs" class="muted">「読み込み」を押すと一覧が表示されます。</div>
+</fieldset>
+
+<button id="save" disabled>保存</button>
+<div id="status"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { available: [] };
+
+$("api-url").value = localStorage.getItem("briefApiUrl") || "";
+$("token").value = localStorage.getItem("briefToken") || "";
+
+function setStatus(msg, ok) {
+  $("status").textContent = msg;
+  $("status").className = ok ? "ok" : "err";
+}
+
+async function call(method, body) {
+  const url = $("api-url").value.trim();
+  const token = $("token").value.trim();
+  if (!url || !token) throw new Error("API URL とトークンを入力してください");
+  localStorage.setItem("briefApiUrl", url);
+  localStorage.setItem("briefToken", token);
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+  return j;
+}
+
+function render(j) {
+  state.available = j.available || [];
+  const cfg = j.config || {};
+  const selected = new Set(cfg.pairs || []);
+  $("pairs").innerHTML = state.available
+    .map((p) => `<label><input type="checkbox" name="pair" value="${p}"
+      ${selected.has(p) ? "checked" : ""}> ${p}</label>`)
+    .join("");
+  document.querySelector(`input[name=mode][value=${cfg.mode || "pairs"}]`).checked = true;
+  $("top-n").value = cfg.top_n || 10;
+  $("enabled").checked = cfg.enabled !== false;
+  $("delivery-file").checked = cfg.delivery === "file";
+  $("save").disabled = false;
+}
+
+$("load").onclick = async () => {
+  try {
+    setStatus("読み込み中...", true);
+    render(await call("GET"));
+    setStatus("読み込みました", true);
+  } catch (e) { setStatus("読み込み失敗: " + e.message, false); }
+};
+
+$("save").onclick = async () => {
+  try {
+    setStatus("保存中...", true);
+    const body = {
+      mode: document.querySelector("input[name=mode]:checked").value,
+      pairs: [...document.querySelectorAll("input[name=pair]:checked")].map((x) => x.value),
+      top_n: Number($("top-n").value),
+      enabled: $("enabled").checked,
+      delivery: $("delivery-file").checked ? "file" : "chunks",
+    };
+    const j = await call("PUT", body);
+    render(j);
+    setStatus("保存しました。次回の配信から反映されます。\n" +
+      JSON.stringify(j.config, null, 2), true);
+  } catch (e) { setStatus("保存失敗: " + e.message, false); }
+};
+</script>
+</body>
+</html>

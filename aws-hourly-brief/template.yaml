@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  aws-hourly-brief: hourly bitbank market digest to Discord.
+  EventBridge -> Rust Lambda (arm64) -> bitbank public API -> Discord webhook,
+  with pair selection in a single DynamoDB record (editable via config API).
+
+Parameters:
+  WebhookParamName:
+    Type: String
+    Default: /aws-hourly-brief/discord-webhook
+    Description: SSM SecureString parameter holding the Discord webhook URL
+  TokenParamName:
+    Type: String
+    Default: /aws-hourly-brief/config-token
+    Description: SSM SecureString parameter holding the config API shared token
+  ScheduleExpression:
+    Type: String
+    Default: rate(1 hour)
+    Description: EventBridge schedule (e.g. "cron(0 * * * ? *)" for on the hour)
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: CORS Access-Control-Allow-Origin for the config API
+
+Globals:
+  Function:
+    Runtime: provided.al2023
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 60
+
+Resources:
+  ConfigTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+
+  BriefFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: aws-hourly-brief
+      CodeUri: target/lambda/lambda-brief/bootstrap.zip
+      Handler: bootstrap
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ConfigTable
+          WEBHOOK_PARAM: !Ref WebhookParamName
+          BITBANK_BRIEF_CONCURRENCY: "16"
+      Events:
+        Hourly:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScheduleExpression
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ConfigTable
+        - SSMParameterWithSlashPrefixReadPolicy:
+            ParameterName: !Ref WebhookParamName
+
+  BriefLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${BriefFunction}
+      RetentionInDays: 7
+
+  ConfigApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: aws-hourly-brief-config-api
+      CodeUri: target/lambda/lambda-config-api/bootstrap.zip
+      Handler: bootstrap
+      Timeout: 30
+      FunctionUrlConfig:
+        AuthType: NONE
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ConfigTable
+          TOKEN_PARAM: !Ref TokenParamName
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConfigTable
+        - SSMParameterWithSlashPrefixReadPolicy:
+            ParameterName: !Ref TokenParamName
+
+  ConfigApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ConfigApiFunction}
+      RetentionInDays: 7
+
+Outputs:
+  ConfigTableName:
+    Value: !Ref ConfigTable
+  ConfigApiUrl:
+    Description: Function URL for the config API (use in gui/index.html)
+    Value: !GetAtt ConfigApiFunctionUrl.FunctionUrl
