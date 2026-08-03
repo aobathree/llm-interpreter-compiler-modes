@@ -18,7 +18,7 @@
   h2 .num { margin-right: 4pt; }
   p { margin: 0 0 3pt 0; }
   .abstract-head { font-weight: bold; font-style: italic; }
-  .abstract { font-size: 8pt; margin-bottom: 4pt; }
+  .abstract { font-size: 8.2pt; margin: 7pt 14mm 9pt 14mm; text-align: justify; }
   code { font-family: "Consolas", monospace; font-size: 8pt; }
   table { border-collapse: collapse; font-size: 7.4pt; margin: 3pt auto 2pt auto;
           width: 100%; }
@@ -38,11 +38,11 @@ LLM Market-Analysis Task by Moving Deterministic Work into Code</h1>
 <p class="authors">Aoba Three &nbsp;(research@aobathree.com)</p>
 <p class="affil">Prepared with the assistance of ChatGPT, Claude, and Cursor &nbsp;·&nbsp; August 2, 2026</p>
 <p class="affil">Artifacts: https://github.com/aobathree/llm-interpreter-compiler-modes</p>
+
+<p class="abstract"><span class="abstract-head">Abstract&mdash;</span>A recurring market-analysis task run through an LLM agent repeats work that never changes: each run re-fetched raw price data and re-derived technical indicators inside the model's context. We restructured the task so that all deterministic work&mdash;data retrieval, indicator computation, formatting&mdash;is performed by conventional code emitting a compact digest, and the LLM reads only that digest. This paper reports the design considerations, three successive implementations, and their measurements, which show substantial reductions in context consumption, latency, and CPU usage, and which surfaced operational constraints&mdash;server-side rate limiting, resource costs hidden behind unchanged wall-clock time&mdash;that only measurement could reveal. The resulting pipeline runs unattended, hourly, on serverless infrastructure at effectively zero cost.</p>
 </div>
 
 <div class="twocol">
-
-<p class="abstract"><span class="abstract-head">Abstract&mdash;</span>Running a recurring market-analysis task through an LLM agent wastes resources on work that never changes: on each run the agent re-fetched raw price data, re-derived technical indicators in-context, and consumed tens of thousands of tokens over several minutes. We restructured the task so that all deterministic work&mdash;data retrieval, indicator computation, formatting&mdash;is performed by conventional code emitting a compact digest, and the LLM reads only that digest. Three successive implementations (a Python script, a parallelized native Rust binary, and a direct-REST variant) reduced per-run cost from &gt;10<sup>4</sup> tokens and minutes of latency to under ten lines of text and ~0.1&nbsp;s, with byte-identical analytical output verified across implementations. Scaling from 3 to 62 instruments exposed server-side rate limiting, resolved with a bounded-concurrency guard (62 instruments in ~1.2&nbsp;s). Process-tree accounting further showed that two variants with equal wall-clock time differed by 42&times; in CPU time, a gap that matters on resource-constrained hosts. The pipeline now runs hourly on serverless infrastructure at effectively zero cost, with its instrument list editable at runtime through a small configuration API.</p>
 
 <h2><span class="num">1</span>Problem</h2>
 <p>The motivating task is a recurring trading-condition digest&mdash;price, RSI, MACD sign, position relative to moving averages, volume pattern, and ATR&mdash;for currency pairs listed on the bitbank cryptocurrency exchange. Performed by an LLM agent directly, each run fetched several hundred raw OHLCV candles per pair into the model's context and computed indicators in-conversation. This had four recurring costs: (i) context consumption exceeding 10<sup>4</sup> tokens per run, growing linearly with the amount of history fetched; (ii) minute-scale latency dominated by model inference; (iii) arithmetic-error risk in manually derived indicators, adding verification overhead; and (iv) non-reproducibility, since model output varies across runs. None of these costs purchases anything after the first run: the procedure itself is stable from day to day.</p>
