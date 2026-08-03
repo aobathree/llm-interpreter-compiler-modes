@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Interpreter and Compiler Modes for LLM-Assisted Workflows</title>
+<title>Reducing Token, Latency, and Compute Costs of a Recurring LLM Market-Analysis Task</title>
 <style>
   @page { size: A4; margin: 10mm 11mm; }
   * { box-sizing: border-box; }
@@ -17,10 +17,9 @@
   h2 { font-size: 9pt; margin: 4.5pt 0 1.5pt 0; font-weight: bold; }
   h2 .num { margin-right: 4pt; }
   p { margin: 0 0 3pt 0; }
-  p.first { text-indent: 0; }
   .abstract-head { font-weight: bold; font-style: italic; }
   .abstract { font-size: 8pt; margin-bottom: 4pt; }
-  code { font-family: "Consolas", monospace; font-size: 8.2pt; }
+  code { font-family: "Consolas", monospace; font-size: 8pt; }
   table { border-collapse: collapse; font-size: 7.4pt; margin: 3pt auto 2pt auto;
           width: 100%; }
   th, td { border-top: 0.7pt solid #333; border-bottom: 0.7pt solid #333;
@@ -28,35 +27,35 @@
   thead th { border-top: 1.2pt solid #000; border-bottom: 0.7pt solid #000; }
   tbody tr:last-child td { border-bottom: 1.2pt solid #000; }
   .caption { font-size: 7.4pt; text-align: center; margin: 1pt 0 5pt 0; }
-  .refs { font-size: 6.9pt; line-height: 1.18; }
-  .refs p { margin: 0 0 2pt 0; padding-left: 12pt; text-indent: -12pt; }
   .figbox { break-inside: avoid; }
 </style>
 </head>
 <body>
 
 <div class="titleblock">
-<h1>Interpreter and Compiler Modes for LLM-Assisted Workflows:<br>
-Compiling an Exploratory Agent into a Production Market-Digest Pipeline</h1>
-<p class="authors">aobathree</p>
-<p class="affil">Independent researcher &nbsp;·&nbsp; Prepared with the assistance of ChatGPT, Claude, and Cursor &nbsp;·&nbsp; August 2, 2026</p>
+<h1>Reducing Token, Latency, and Compute Costs of a Recurring<br>
+LLM Market-Analysis Task by Moving Deterministic Work into Code</h1>
+<p class="authors">Aoba Three &nbsp;(research@aobathree.com)</p>
+<p class="affil">Prepared with the assistance of ChatGPT, Claude, and Cursor &nbsp;·&nbsp; August 2, 2026</p>
 <p class="affil">Artifacts: https://github.com/aobathree/llm-interpreter-compiler-modes</p>
 </div>
 
 <div class="twocol">
 
-<p class="abstract"><span class="abstract-head">Abstract—</span>LLM agents excel at discovering procedures for unfamiliar tasks but are slow, costly, and non-deterministic when the same procedure is repeated. We articulate a two-phase model separating <i>exploration</i> (the LLM discovers a procedure; <i>interpreter mode</i>) from <i>execution</i> (the procedure is fixed as deterministic code; <i>compiler mode</i>), connected by a guard-triggered fallback loop analogous to JIT deoptimization. On a recurring cryptocurrency market-digest task, compilation reduced LLM context consumption from tens of thousands of tokens to under ten lines per run; successive stages reduced latency from minutes to ~0.1 s, and process-tree accounting revealed a 42× CPU reduction invisible to wall-clock measurement. Scaling to 62 instruments surfaced server-side rate limiting, absorbed by a concurrency guard. The pipeline now runs hourly on serverless infrastructure at negligible cost, and the design was proposed upstream to the vendor’s CLI project.</p>
+<p class="abstract"><span class="abstract-head">Abstract&mdash;</span>Running a recurring market-analysis task through an LLM agent wastes resources on work that never changes: on each run the agent re-fetched raw price data, re-derived technical indicators in-context, and consumed tens of thousands of tokens over several minutes. We restructured the task so that all deterministic work&mdash;data retrieval, indicator computation, formatting&mdash;is performed by conventional code emitting a compact digest, and the LLM reads only that digest. Three successive implementations (a Python script, a parallelized native Rust binary, and a direct-REST variant) reduced per-run cost from &gt;10<sup>4</sup> tokens and minutes of latency to under ten lines of text and ~0.1&nbsp;s, with byte-identical analytical output verified across implementations. Scaling from 3 to 62 instruments exposed server-side rate limiting, resolved with a bounded-concurrency guard (62 instruments in ~1.2&nbsp;s). Process-tree accounting further showed that two variants with equal wall-clock time differed by 42&times; in CPU time, a gap that matters on resource-constrained hosts. The pipeline now runs hourly on serverless infrastructure at effectively zero cost, with its instrument list editable at runtime through a small configuration API.</p>
 
-<h2><span class="num">1</span>Introduction</h2>
-<p>LLM agents interleave reasoning with tool invocation, which suits tasks whose procedure is unknown in advance. Once the procedure stabilizes, however, re-running the agent repeats inference cost on every execution: contexts fill with raw intermediate data, latency is dominated by model calls, and outputs are irreproducible. We treat agent operation as two modes: in <i>interpreter mode</i> the LLM explores to discover a working procedure; in <i>compiler mode</i> that procedure is fixed as deterministic code with no LLM on the critical path. A guard-and-fallback loop returns control to the LLM only when compiled assumptions break, after which the procedure is recompiled. Because fixing occurs only after observing real executions, the model resembles JIT compilation with deoptimization rather than ahead-of-time compilation.</p>
-<p>This position aligns with the industry shift toward executing code rather than chaining model-mediated tool calls [3,4] and with research on distilling agent trajectories into reusable workflows [1,2,5]. Our contribution is an end-to-end case study covering the full lifecycle—exploration, compilation, measurement-driven hardening, production deployment, and upstreaming—quantifying effects that partial treatments omit, notably resource costs hidden behind unchanged wall-clock time.</p>
+<h2><span class="num">1</span>Problem</h2>
+<p>The motivating task is a recurring trading-condition digest&mdash;price, RSI, MACD sign, position relative to moving averages, volume pattern, and ATR&mdash;for currency pairs listed on the bitbank cryptocurrency exchange. Performed by an LLM agent directly, each run fetched several hundred raw OHLCV candles per pair into the model's context and computed indicators in-conversation. This had four recurring costs: (i) context consumption exceeding 10<sup>4</sup> tokens per run, growing linearly with the amount of history fetched; (ii) minute-scale latency dominated by model inference; (iii) arithmetic-error risk in manually derived indicators, adding verification overhead; and (iv) non-reproducibility, since model output varies across runs. None of these costs purchases anything after the first run: the procedure itself is stable from day to day.</p>
 
-<h2><span class="num">2</span>The Two-Mode Model</h2>
-<p>An agent trajectory is compiled by decomposing it into three parts: (i) operations that can be fully fixed (data retrieval, aggregation, formatting), which become ordinary code; (ii) values that must remain variable (e.g., the target instrument), which become parameters; and (iii) residual semantic judgment (e.g., "comment briefly on the digest"), which remains a small LLM invocation. The optimal result is therefore rarely an LLM-free script; it is a deterministic skeleton with narrowly scoped LLM calls and an agent fallback path. Naïve record-and-replay fails in practice—incidental retries are misinterpreted as procedure, values are hard-coded, and implicit decision criteria are lost—so compilation additionally requires input identification, idempotency awareness, guard conditions, and golden tests that compare compiled output against the interpreted run.</p>
+<h2><span class="num">2</span>Design Considerations</h2>
+<p>The workload divides into three parts with different requirements. Deterministic operations (retrieval, aggregation, indicator arithmetic, formatting) can be fixed as ordinary code. Run-specific values (the target instruments) must remain parameters rather than being hard-coded from one observed run. Genuinely semantic work (a one-line commentary on the digest) remains an LLM responsibility, but operates on the digest text alone.</p>
+<p>Three further requirements shaped the design. First, an output contract: a fixed three-line digest per instrument, readable by both humans and LLMs, stable enough to compare byte-for-byte across implementations (golden testing). Second, guards: indicators are computed from confirmed candles only, per-instrument failures are contained as single error lines rather than aborting the run, and external-API concurrency is bounded. Third, an escape hatch: when assumptions break&mdash;API changes, unexpected data shapes&mdash;the task falls back to interactive analysis, and the code is revised.</p>
 
-<h2><span class="num">3</span>Case Study: A Recurring Market Digest</h2>
-<p>The task is a recurring trading-condition digest (price, RSI, MACD sign, moving-average position, volume pattern, ATR) for pairs listed on the bitbank cryptocurrency exchange. In interpreter mode, the LLM fetched hundreds of raw OHLCV candles per pair and computed indicators in-context—tens of thousands of tokens per run, minute-scale latency, arithmetic risk. The stabilized procedure was compiled into a Python script emitting a three-line digest per pair; the LLM thereafter reads only the digest. Two further stages followed: a Rust reimplementation parallelizing all fetches, and a variant calling the exchange REST API directly instead of spawning the vendor CLI as subprocesses. Output equivalence across implementations was verified byte-for-byte (golden testing); Table&nbsp;1 summarizes the latency ladder.</p>
+<h2><span class="num">3</span>Implementation</h2>
+<p>Three implementations were built, each preserving the output contract. (1)&nbsp;A Python script (standard library only) fetching daily and hourly candles through the exchange's CLI and computing all indicators. (2)&nbsp;A native Rust binary that issues all fetches in parallel under a semaphore capping in-flight requests at 16. (3)&nbsp;A Rust variant that calls the exchange REST API directly with pooled TLS connections&mdash;four HTTP requests per instrument&mdash;instead of spawning CLI subprocesses. Output equivalence across (1)&ndash;(3) was verified byte-for-byte.</p>
+<p>For production, the digest core was extracted into a library and deployed as an hourly serverless job: a scheduler invokes a 256&nbsp;MB arm64 Rust Lambda function, which reads its instrument configuration from a single DynamoDB record, generates the digest, and posts it to a Discord webhook, chunked to the platform's 2,000-character message limit. A token-authenticated configuration API and a static single-page GUI allow the instrument list to be changed at runtime; changes take effect at the next scheduled run without redeployment. No always-on infrastructure is used.</p>
 
+<h2><span class="num">4</span>Results</h2>
 <div class="figbox">
 <table>
 <thead><tr><th>Stage</th><th>Implementation</th><th>LLM reads</th><th>Latency</th></tr></thead>
@@ -67,46 +66,32 @@ Compiling an Exploratory Agent into a Production Market-Digest Pipeline</h1>
 <tr><td>3</td><td>Rust, direct REST API</td><td>~10 lines</td><td>0.11 s</td></tr>
 </tbody>
 </table>
-<p class="caption">Table 1. Compilation stages (3 pairs; medians). Stages 1–3 produce byte-identical digests.</p>
+<p class="caption">Table 1. Per-run cost by stage (3 instruments; medians). Stages 1&ndash;3 produce byte-identical digests.</p>
 </div>
-
-<p>The stage-1→2 speedup (5.5×) is attributable almost entirely to eliminating interpreter startup and parallelizing six network fetches, not to language choice: indicator computation is sub-millisecond in both implementations, and the workload is network-bound.</p>
-
-<h2><span class="num">4</span>Scale Surfaces Hidden Constraints</h2>
-<p>Extending from 3 to all 62 listed pairs (124 parallel fetches; &gt;300 HTTP requests) exposed a constraint invisible at small scale: with unbounded parallelism, runs above ~30 pairs intermittently stalled for 15–26 s without any error being returned, a pattern consistent with token-bucket rate limiting. Introducing a concurrency guard (a semaphore capping in-flight requests at 16) restored stable behavior: all 62 pairs complete in ~1.2 s, matching the estimate 124 fetches ÷ 16 ≈ 8 waves × 0.15 s. This episode instantiates the model's fallback loop in practice: a compiled assumption (unbounded parallelism is safe) failed under scale, was diagnosed, and the procedure was recompiled with a guard.</p>
-
-<h2><span class="num">5</span>Wall-Clock Parity Can Hide a 42× Resource Gap</h2>
-<p>Stage 3 initially appeared to offer only ~1.2× wall-clock improvement over stage 2, inviting the conclusion that removing a call layer has little value. Process-tree accounting (Windows Job Objects, capturing all short-lived children) showed otherwise (Table&nbsp;2): the CLI-subprocess design spends 42× more CPU and two orders of magnitude more processes and page faults, hidden by network-bound waiting on a multi-core host. On CPU-constrained targets the difference re-emerges as wall-clock time: “not faster” and “not lighter” are distinct claims.</p>
+<p><b>Latency.</b> Table&nbsp;1 shows the ladder. The stage-1&rarr;2 speedup (5.5&times;) comes almost entirely from eliminating interpreter startup and overlapping six network fetches; indicator arithmetic is sub-millisecond in every implementation, and the workload is network-bound.</p>
+<p><b>Scale.</b> Extending from 3 to all 62 listed pairs (124 parallel fetches, &gt;300 HTTP requests) surfaced a constraint invisible at small scale: with unbounded parallelism, runs above ~30 pairs stalled intermittently for 15&ndash;26&nbsp;s with no error returned, consistent with token-bucket rate limiting. With concurrency capped at 16, all 62 pairs complete in ~1.2&nbsp;s, matching the estimate 124 fetches &divide; 16 &asymp; 8 waves &times; 0.15&nbsp;s.</p>
+<p><b>Resources.</b> Stages 2 and 3 are nearly indistinguishable by wall-clock time, which suggested that bypassing the CLI layer was not worthwhile. Process-tree accounting (Windows Job Objects, which capture all short-lived child processes) showed otherwise (Table&nbsp;2): the subprocess design spends 42&times; more CPU and two orders of magnitude more processes and page faults, hidden behind network waiting on a multi-core host. On CPU-constrained targets&mdash;small containers, low-end VPS instances&mdash;this difference re-emerges as wall-clock time.</p>
 
 <div class="figbox">
 <table>
 <thead><tr><th>Metric (62 pairs)</th><th>CLI subproc.</th><th>Direct API</th><th>Ratio</th></tr></thead>
 <tbody>
-<tr><td>Wall-clock time</td><td>1.1–1.7 s</td><td>1.1 s</td><td>~1.2×</td></tr>
-<tr><td>CPU time (tree)</td><td>1.97 s</td><td>0.05 s</td><td>42×</td></tr>
-<tr><td>Processes</td><td>125</td><td>1</td><td>125×</td></tr>
-<tr><td>Page faults</td><td>3.2×10<sup>5</sup></td><td>6.5×10<sup>3</sup></td><td>50×</td></tr>
-<tr><td>Peak memory (job)</td><td>30 MB</td><td>20 MB</td><td>1.5×</td></tr>
+<tr><td>Wall-clock time</td><td>1.1&ndash;1.7 s</td><td>1.1 s</td><td>~1.2&times;</td></tr>
+<tr><td>CPU time (tree)</td><td>1.97 s</td><td>0.05 s</td><td>42&times;</td></tr>
+<tr><td>Processes</td><td>125</td><td>1</td><td>125&times;</td></tr>
+<tr><td>Page faults</td><td>3.2&times;10<sup>5</sup></td><td>6.5&times;10<sup>3</sup></td><td>50&times;</td></tr>
+<tr><td>Peak memory (job)</td><td>30 MB</td><td>20 MB</td><td>1.5&times;</td></tr>
 </tbody>
 </table>
 <p class="caption">Table 2. Resource consumption via Job Object accounting (medians of 3 runs).</p>
 </div>
+<p><b>Operation.</b> The deployed function generates and delivers a digest in ~0.2&nbsp;s per hourly invocation within the 256&nbsp;MB memory class. Monthly operating cost is effectively zero (720 invocations, single-record database reads, no always-on resources). A runtime configuration change made through the GUI was observed to take effect at the immediately following run.</p>
 
-<h2><span class="num">6</span>Deployment and Upstreaming</h2>
-<p>The measured lightness (0.05 s CPU, 20 MB, one process) permits production operation on minimal serverless infrastructure: an hourly schedule invokes a 256 MB arm64 Rust Lambda function that reads its target-pair configuration from a single DynamoDB record, generates the digest, and posts it to a Discord webhook chunked to the 2,000-character limit. Configuration changes made through a static single-page GUI take effect at the next run without redeployment; operating cost is effectively zero. The decomposition of Section&nbsp;2 also indicates where each component should live—deterministic computation in the vendor’s CLI, the trigger/commentary layer in a thin agent skill—and we proposed a <code>periodical-brief</code> subcommand upstream with the reference implementation and measurements [6].</p>
+<h2><span class="num">5</span>Lessons</h2>
+<p>Two findings contradicted our working hypotheses and were only established by measurement. First, subprocess overhead was assumed to dominate stage&nbsp;2; in fact the vendor CLI is a thin native binary and its cost is invisible at wall-clock granularity&mdash;while an initial direct-API build was <i>slower</i> than the CLI design until an HTTP connection-pool default (one idle connection per host, forcing TLS re-handshakes on every wave) was corrected. Second, equal wall-clock time concealed the 42&times; CPU difference of Table&nbsp;2: "no faster" and "no lighter" are independent claims, and the dimension that matters depends on the deployment target. More generally, scale changed the problem qualitatively&mdash;rate limiting appears only beyond ~30 instruments&mdash;so guards discovered by measurement, not the initial design, made the pipeline production-ready.</p>
 
-<h2><span class="num">7</span>Conclusion</h2>
-<p>The interpreter/compiler framing is practical and compounds: 10<sup>3</sup>-fold context reduction from compilation itself, order-of-magnitude latency and resource gains from classical optimization that determinism makes safe to apply, and a near-zero-cost production path. Two lessons generalize: hypotheses about where time is spent do not survive measurement, and scale breaks compiled assumptions in ways only guards and re-exploration absorb. The full lifecycle—explore, compile, measure, guard, operate, upstream—is itself the unit of value.</p>
-
-<h2>References</h2>
-<div class="refs">
-<p>[1] Z. Wang et al., "Agent Workflow Memory," arXiv:2409.07429, 2024.</p>
-<p>[2] S. Kim et al., "An LLM Compiler for Parallel Function Calling," arXiv:2312.04511, 2023.</p>
-<p>[3] Cloudflare, "Code Mode: the better way to use MCP," Cloudflare Blog, Sep. 2025.</p>
-<p>[4] Anthropic, "Code execution with MCP," Anthropic Engineering Blog, Nov. 2025.</p>
-<p>[5] O. Khattab et al., "DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines," arXiv:2310.03714, 2023.</p>
-<p>[6] aobathree, "[feat] periodical-brief," bitbankinc/bitbank-lab-cli, Issue #21, Aug. 2026. https://github.com/bitbankinc/bitbank-lab-cli/issues/21</p>
-</div>
+<h2><span class="num">6</span>Conclusion</h2>
+<p>Moving the deterministic majority of a recurring LLM-assisted analysis into conventional code reduced per-run context consumption by three orders of magnitude, latency from minutes to ~0.1&nbsp;s, and CPU consumption by 42&times; relative to a subprocess-based variant, while making outputs reproducible and testable. The result runs unattended, hourly, at effectively zero cost, with the LLM retained only where it adds value: reading a ten-line digest and commenting on it. On the strength of these measurements, the digest command has been proposed for inclusion in the exchange's official CLI (bitbankinc/bitbank-lab-cli, Issue&nbsp;#21), where its deterministic computation naturally belongs. All code, benchmark procedures, and raw measurements are available in the artifacts repository.</p>
 
 </div>
 </body>
