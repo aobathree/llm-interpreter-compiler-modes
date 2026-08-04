@@ -95,7 +95,7 @@ cargo build --release
 
 配信対象の銘柄は、静的HTML 1枚のGUIからいつでも変更できます（保存すると次回配信から反映。デプロイ不要）：
 
-![銘柄選択GUI](screenshot/aobathree%20cc%20selection%20menu%202026-08-02.png)
+![銘柄選択GUI](screenshot/aobathree%20cc%20selection%20menu%202026-08-04.png)
 
 ## 記事の要旨
 
