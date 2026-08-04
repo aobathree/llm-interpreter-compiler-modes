@@ -25,20 +25,19 @@ def tickers():
     j = json.loads(out.stdout)
     return j["data"]
 
+# 旧ティッカーのペア。tickers API には残っているが、bitbank の現行取扱い
+# 銘柄（44種類）には含まれない（MATIC→POL・RNDR→RENDER 移行後、MKR は取扱い外）。
+LEGACY_PAIRS = {"matic_jpy", "rndr_jpy", "mkr_jpy"}
+
 def rank_by_jpy_volume(rows):
-    """24h売買代金(JPY換算)の降順ランキング。BTC建ては btc_jpy で換算。"""
-    btc_jpy = next((float(r["last"]) for r in rows if r["pair"] == "btc_jpy"), None)
+    """公式取扱い銘柄（44種類・JPY建て）の24h売買代金降順ランキング。
+    tickers API に載る旧ティッカー・BTC建てクロスペアは取扱い銘柄ではないため除外。"""
     ranked = []
     for r in rows:
-        pair, vol, last = r["pair"], float(r["vol"]), float(r["last"])
-        notional = vol * last
-        if pair.endswith("_btc"):
-            if btc_jpy is None:
-                continue
-            notional *= btc_jpy
-        elif not pair.endswith("_jpy"):
-            continue  # 想定外の建て通貨はスキップ
-        ranked.append((pair, notional))
+        pair = r["pair"]
+        if not pair.endswith("_jpy") or pair in LEGACY_PAIRS:
+            continue
+        ranked.append((pair, float(r["vol"]) * float(r["last"])))
     ranked.sort(key=lambda x: -x[1])
     return ranked
 

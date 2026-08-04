@@ -178,7 +178,13 @@ fn fetch_hourly(pair: &str, limit: usize) -> Result<Vec<Candle>, String> {
     Ok(all.split_off(start))
 }
 
-/// 全銘柄を24時間売買代金（JPY換算）の降順で返す。BTC建ては btc_jpy で換算。
+/// 旧ティッカーのペア。tickers API には残っているが、bitbank の現行取扱い
+/// 銘柄には含まれない（MATIC→POL・RNDR→RENDER 移行後、MKR は取扱い外）。
+const LEGACY_PAIRS: [&str; 3] = ["matic_jpy", "rndr_jpy", "mkr_jpy"];
+
+/// 公式取扱い銘柄（44種類・すべてJPY建て）を24時間売買代金の降順で返す。
+/// tickers API には旧ティッカーや BTC建てクロスペアも載るが、
+/// これらは現行の取扱い銘柄ではないため除外する。
 pub fn ranked_pairs() -> Result<Vec<String>, String> {
     let j = http_get(&format!("{BASE}/tickers"))?
         .ok_or_else(|| "tickers: not found".to_string())?;
@@ -186,30 +192,20 @@ pub fn ranked_pairs() -> Result<Vec<String>, String> {
         return Err("tickers: success != 1".into());
     }
     let rows = j["data"].as_array().ok_or_else(|| "tickers: no data".to_string())?;
-    let btc_jpy = rows
-        .iter()
-        .find(|r| r["pair"].as_str() == Some("btc_jpy"))
-        .and_then(|r| num(&r["last"]));
     let mut ranked: Vec<(String, f64)> = Vec::new();
     for r in rows {
         let pair = match r["pair"].as_str() {
             Some(p) => p.to_string(),
             None => continue,
         };
+        if !pair.ends_with("_jpy") || LEGACY_PAIRS.contains(&pair.as_str()) {
+            continue;
+        }
         let (vol, last) = match (num(&r["vol"]), num(&r["last"])) {
             (Some(v), Some(l)) => (v, l),
             _ => continue,
         };
-        let mut notional = vol * last;
-        if pair.ends_with("_btc") {
-            match btc_jpy {
-                Some(b) => notional *= b,
-                None => continue,
-            }
-        } else if !pair.ends_with("_jpy") {
-            continue;
-        }
-        ranked.push((pair, notional));
+        ranked.push((pair, vol * last));
     }
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     Ok(ranked.into_iter().map(|(p, _)| p).collect())

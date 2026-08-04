@@ -1,6 +1,6 @@
 //! bitbank daily brief — REST API 直接版（コンパイル・モードのさらなる深化）。
 //!
-//! rust/ 版は `bitbank` CLI をサブプロセス起動していた（62銘柄で124プロセス）。
+//! rust/ 版は `bitbank` CLI をサブプロセス起動していた（44銘柄で88プロセス）。
 //! 本実装は bitbank public REST API を直接呼ぶ:
 //! - プロセス生成ゼロ
 //! - HTTP 接続プーリング（TLSハンドシェイクを使い回す）

@@ -8,10 +8,10 @@ LLM活用の二相モデル——初回は LLM による試行錯誤で手順を
 
 | ファイル | 説明 |
 |---|---|
-| [article-llm-interpreter-compiler-modes.md](article-llm-interpreter-compiler-modes.md) | 本編記事（図解入り・用語注釈付き。8/2改訂: Rust実験を追記） |
-| [docs/article-llm-interpreter-compiler-modes-20260802.pdf](docs/article-llm-interpreter-compiler-modes-20260802.pdf) | **改訂版PDF**（8/2付け・A4・6ページ。Rust実験〜本家への提案まで） |
+| [article-llm-interpreter-compiler-modes.md](article-llm-interpreter-compiler-modes.md) | 本編記事（図解入り・用語注釈付き。8/2改訂: Rust実験を追記。8/4訂正: 取扱い銘柄数を62→44に訂正し再計測） |
+| [docs/article-llm-interpreter-compiler-modes-20260804.pdf](docs/article-llm-interpreter-compiler-modes-20260804.pdf) | **訂正版PDF**（8/4付け・A4・6ページ。Rust実験〜本家への提案まで） |
 | [docs/article-llm-interpreter-compiler-modes.pdf](docs/article-llm-interpreter-compiler-modes.pdf) | 初版PDF（8/1付け・A4・2ページ） |
-| [docs-en/reducing-llm-task-costs-by-moving-deterministic-work-into-code-20260802.pdf](docs-en/reducing-llm-task-costs-by-moving-deterministic-work-into-code-20260802.pdf) | **English paper**: <i>Reducing Token, Latency, and Compute Costs of a Recurring LLM Market-Analysis Task by Moving Deterministic Work into Code</i>（A4・1ページ・2段組） |
+| [docs-en/reducing-llm-task-costs-by-moving-deterministic-work-into-code-20260804.pdf](docs-en/reducing-llm-task-costs-by-moving-deterministic-work-into-code-20260804.pdf) | **English paper**: <i>Reducing Token, Latency, and Compute Costs of a Recurring LLM Market-Analysis Task by Moving Deterministic Work into Code</i>（A4・1ページ・2段組） |
 | [llm-interpreter-compile-mode-ChatGPT.md](llm-interpreter-compile-mode-ChatGPT.md) | ChatGPT との対話ドラフト（概念の体系化） |
 | [llm-interpreter-compile-mode-Cursor.md](llm-interpreter-compile-mode-Cursor.md) | Cursor との対話ドラフト（業界潮流・設計課題） |
 | [tools/daily_brief.py](tools/daily_brief.py) | 実証コード：暗号通貨の日次商い状況を集計するスクリプト（Python） |
@@ -69,13 +69,14 @@ cargo build --release
 「手順が決定的なコードに固定されているからこそ、こうした並列化などの
 古典的な最適化が安全に適用できる」点にあります。
 
-銘柄数を増やしたときの挙動（全62銘柄で約1.2秒、無制限並列だとレート制限を踏む話）は
-[benchmark/results.md](benchmark/results.md) を参照してください。同時 fetch 数は既定16で、
-環境変数 `BITBANK_BRIEF_CONCURRENCY` で変更できます。
+銘柄数を増やしたときの挙動（取扱い全44銘柄で約1.2秒、無制限並列だとレート制限を
+踏むことがある話）は [benchmark/results.md](benchmark/results.md) を参照してください。
+同時 fetch 数は既定16で、環境変数 `BITBANK_BRIEF_CONCURRENCY` で変更できます。
 
 さらに `bitbank` CLI を経由せず REST API を直接呼ぶ [rust-direct/](rust-direct/) もあります
-（出力は1文字単位で同一。62銘柄で約1.2倍・分散大幅減。詳細と考察は
-[benchmark/results-direct.md](benchmark/results-direct.md)）。
+（出力は1文字単位で同一。44銘柄で壁時計時間は同等ながらCPU時間34倍差・ばらつき減。
+詳細と考察は [benchmark/results-direct.md](benchmark/results-direct.md) と
+[benchmark/results-resources.md](benchmark/results-resources.md)）。
 
 ```bash
 ./target/release/daily_brief btc_jpy eth_jpy sol_jpy doge_jpy  # 任意の銘柄数でOK

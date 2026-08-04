@@ -9,7 +9,7 @@ Discord Webhook へ配信する。brief 対象銘柄は DynamoDB 上の設定1�
 - 姉妹プロジェクト [sudden-change-detector](https://github.com/aobathree/sudden-change-detector)
   と同じ運用系（EventBridge → Lambda → DynamoDB + Discord Webhook、SAM デプロイ）に揃える。
 - リソース計測（`benchmark/results-resources.md`）で実証済みのとおり、
-  REST API 直接版は 62銘柄でも CPU 0.05秒・1プロセス・20MB。
+  REST API 直接版は全44銘柄（取扱い銘柄すべて）でも CPU 0.05秒・1プロセス・20MB。
   **Lambda の最小クラスの器で全銘柄を毎時回してもコストはほぼゼロ**になる。
 
 ## 1. 全体アーキテクチャ
@@ -113,7 +113,7 @@ aws-hourly-brief/
 
 ### 3.3 Discord 送信
 
-制約: メッセージ本文は **2000文字上限**。62銘柄フル出力は約12KBで超過する。
+制約: メッセージ本文は **2000文字上限**。44銘柄フル出力は約9KBで超過する。
 
 - 本文は ` ```text 〜 ``` ` のコードブロックで送る（等幅で桁が揃う）
 - **ペア境界で1900文字以下にチャンク分割**し、複数メッセージを順次 POST
@@ -133,7 +133,7 @@ aws-hourly-brief/
 - CORS: GUI の配置先オリジンのみ許可
 - GUI は**静的 HTML 1枚**（フレームワーク不使用）:
   - 起動時に `GET /config` と bitbank tickers（public API・CORS 可）を取得し、
-    62銘柄を売買代金降順のチェックボックス一覧で表示
+    取扱い全44銘柄を売買代金降順のチェックボックス一覧で表示
   - mode（pairs / top N / all）切替、保存ボタンで `PUT /config`
   - 配置は S3 静的ウェブサイトホスティング（数円/月）か、
     リポジトリ内の HTML を手元でブラウザーで開くだけでも成立する
@@ -193,7 +193,7 @@ P2 完了時点で「動的変更」は AWS CLI からでも可能になる
 
 ## 8. 未決事項
 
-1. **配信フォーマットの最終形** — 62銘柄を毎時受け取ると流量が多い。
+1. **配信フォーマットの最終形** — 44銘柄を毎時受け取ると流量が多い。
    既定を top10 程度にするか、全銘柄は1日1回＋毎時は選択銘柄のみ、等の
    運用は使いながら決める（設定レコードで切替可能にしておく）
 2. **Rust版CLIとの関係** — brief-core を正本とし、`rust-direct/` を

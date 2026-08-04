@@ -23,19 +23,17 @@ def tickers():
         sys.exit(f"bitbank tickers failed: {out.stderr.strip()}")
     return json.loads(out.stdout)["data"]
 
+# 旧ティッカー（現行取扱い44銘柄には含まれない）
+LEGACY_PAIRS = {"matic_jpy", "rndr_jpy", "mkr_jpy"}
+
 def rank_by_jpy_volume(rows):
-    btc_jpy = next((float(r["last"]) for r in rows if r["pair"] == "btc_jpy"), None)
+    """公式取扱い銘柄（44種類・JPY建て）の24h売買代金降順ランキング。"""
     ranked = []
     for r in rows:
-        pair, vol, last = r["pair"], float(r["vol"]), float(r["last"])
-        notional = vol * last
-        if pair.endswith("_btc"):
-            if btc_jpy is None:
-                continue
-            notional *= btc_jpy
-        elif not pair.endswith("_jpy"):
+        pair = r["pair"]
+        if not pair.endswith("_jpy") or pair in LEGACY_PAIRS:
             continue
-        ranked.append((pair, notional))
+        ranked.append((pair, float(r["vol"]) * float(r["last"])))
     ranked.sort(key=lambda x: -x[1])
     return [p for p, _ in ranked]
 

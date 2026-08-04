@@ -36,7 +36,7 @@
 <h1>Reducing Token, Latency, and Compute Costs of a Recurring<br>
 LLM Market-Analysis Task by Moving Deterministic Work into Code</h1>
 <p class="authors">Aoba Three &nbsp;(research@aobathree.com)</p>
-<p class="affil">Prepared with the assistance of ChatGPT, Claude, and Cursor &nbsp;·&nbsp; August 2, 2026</p>
+<p class="affil">Prepared with the assistance of ChatGPT, Claude, and Cursor &nbsp;·&nbsp; August 2, 2026 &nbsp;·&nbsp; rev. August 4, 2026 (pair count corrected to 44; re-measured)</p>
 <p class="affil">Artifacts: https://github.com/aobathree/llm-interpreter-compiler-modes</p>
 
 <p class="abstract"><span class="abstract-head">Abstract&mdash;</span>A recurring market-analysis task run through an LLM agent repeats work that never changes: each run re-fetched raw price data and re-derived technical indicators inside the model's context. We restructured the task so that all deterministic work&mdash;data retrieval, indicator computation, formatting&mdash;is performed by conventional code emitting a compact digest, and the LLM reads only that digest. This paper reports the design considerations, three successive implementations, and their measurements, which show substantial reductions in context consumption, latency, and CPU usage, and which surfaced operational constraints&mdash;server-side rate limiting, resource costs hidden behind unchanged wall-clock time&mdash;that only measurement could reveal. The resulting pipeline runs unattended, hourly, on serverless infrastructure at effectively zero cost.</p>
@@ -69,18 +69,18 @@ LLM Market-Analysis Task by Moving Deterministic Work into Code</h1>
 <p class="caption">Table 1. Per-run cost by stage (3 instruments; medians). Stages 1&ndash;3 produce byte-identical digests.</p>
 </div>
 <p><b>Latency.</b> Table&nbsp;1 shows the ladder. The stage-1&rarr;2 speedup (5.5&times;) comes almost entirely from eliminating interpreter startup and overlapping six network fetches; indicator arithmetic is sub-millisecond in every implementation, and the workload is network-bound.</p>
-<p><b>Scale.</b> Extending from 3 to all 62 listed pairs (124 parallel fetches, &gt;300 HTTP requests) surfaced a constraint invisible at small scale: with unbounded parallelism, runs above ~30 pairs stalled intermittently for 15&ndash;26&nbsp;s with no error returned, consistent with token-bucket rate limiting. With concurrency capped at 16, all 62 pairs complete in ~1.2&nbsp;s, matching the estimate 124 fetches &divide; 16 &asymp; 8 waves &times; 0.15&nbsp;s.</p>
-<p><b>Resources.</b> Stages 2 and 3 are nearly indistinguishable by wall-clock time, which suggested that bypassing the CLI layer was not worthwhile. Process-tree accounting (Windows Job Objects, which capture all short-lived child processes) showed otherwise (Table&nbsp;2): the subprocess design spends 42&times; more CPU and two orders of magnitude more processes and page faults, hidden behind network waiting on a multi-core host. On CPU-constrained targets&mdash;small containers, low-end VPS instances&mdash;this difference re-emerges as wall-clock time.</p>
+<p><b>Scale.</b> Extending from 3 to all 44 listed pairs (88 parallel fetches, &gt;200 HTTP requests) surfaced a constraint invisible at small scale: with unbounded parallelism, runs above ~30 pairs stalled intermittently for 15&ndash;26&nbsp;s with no error returned, consistent with token-bucket rate limiting. The stalls are server-state-dependent (not reproduced on re-measurement) but the guard is retained: capped at 16 (88 fetches &divide; 16 &asymp; 6 waves), all 44 pairs complete stably in ~1.2&nbsp;s.</p>
+<p><b>Resources.</b> Stages 2 and 3 are nearly indistinguishable by wall-clock time, which suggested that bypassing the CLI layer was not worthwhile. Process-tree accounting (Windows Job Objects, which capture all short-lived child processes) showed otherwise (Table&nbsp;2): the subprocess design spends 34&times; more CPU and roughly two orders of magnitude more processes and page faults, hidden behind network waiting on a multi-core host. On CPU-constrained targets&mdash;small containers, low-end VPS instances&mdash;this difference re-emerges as wall-clock time.</p>
 
 <div class="figbox">
 <table>
-<thead><tr><th>Metric (62 pairs)</th><th>CLI subproc.</th><th>Direct API</th><th>Ratio</th></tr></thead>
+<thead><tr><th>Metric (44 pairs)</th><th>CLI subproc.</th><th>Direct API</th><th>Ratio</th></tr></thead>
 <tbody>
-<tr><td>Wall-clock time</td><td>1.1&ndash;1.7 s</td><td>1.1 s</td><td>~1.2&times;</td></tr>
-<tr><td>CPU time (tree)</td><td>1.97 s</td><td>0.05 s</td><td>42&times;</td></tr>
-<tr><td>Processes</td><td>125</td><td>1</td><td>125&times;</td></tr>
-<tr><td>Page faults</td><td>3.2&times;10<sup>5</sup></td><td>6.5&times;10<sup>3</sup></td><td>50&times;</td></tr>
-<tr><td>Peak memory (job)</td><td>30 MB</td><td>20 MB</td><td>1.5&times;</td></tr>
+<tr><td>Wall-clock time</td><td>1.1&ndash;1.4 s</td><td>1.1 s</td><td>~1.2&times;</td></tr>
+<tr><td>CPU time (tree)</td><td>1.59 s</td><td>0.05 s</td><td>34&times;</td></tr>
+<tr><td>Processes</td><td>89</td><td>1</td><td>89&times;</td></tr>
+<tr><td>Page faults</td><td>2.3&times;10<sup>5</sup></td><td>5.2&times;10<sup>3</sup></td><td>44&times;</td></tr>
+<tr><td>Peak memory (job)</td><td>28 MB</td><td>15 MB</td><td>1.9&times;</td></tr>
 </tbody>
 </table>
 <p class="caption">Table 2. Resource consumption via Job Object accounting (medians of 3 runs).</p>
@@ -88,10 +88,10 @@ LLM Market-Analysis Task by Moving Deterministic Work into Code</h1>
 <p><b>Operation.</b> The deployed function generates and delivers a digest in ~0.2&nbsp;s per hourly invocation within the 256&nbsp;MB memory class. Monthly operating cost is effectively zero (720 invocations, single-record database reads, no always-on resources). A runtime configuration change made through the GUI was observed to take effect at the immediately following run.</p>
 
 <h2><span class="num">5</span>Lessons</h2>
-<p>Two findings contradicted our working hypotheses and were only established by measurement. First, subprocess overhead was assumed to dominate stage&nbsp;2; in fact the vendor CLI is a thin native binary and its cost is invisible at wall-clock granularity&mdash;while an initial direct-API build was <i>slower</i> than the CLI design until an HTTP connection-pool default (one idle connection per host, forcing TLS re-handshakes on every wave) was corrected. Second, equal wall-clock time concealed the 42&times; CPU difference of Table&nbsp;2: "no faster" and "no lighter" are independent claims, and the dimension that matters depends on the deployment target. More generally, scale changed the problem qualitatively&mdash;rate limiting appears only beyond ~30 instruments&mdash;so guards discovered by measurement, not the initial design, made the pipeline production-ready.</p>
+<p>Two findings contradicted our working hypotheses and were only established by measurement. First, subprocess overhead was assumed to dominate stage&nbsp;2; in fact the vendor CLI is a thin native binary and its cost is invisible at wall-clock granularity&mdash;while an initial direct-API build was <i>slower</i> than the CLI design until an HTTP connection-pool default (one idle connection per host, forcing TLS re-handshakes on every wave) was corrected. Second, equal wall-clock time concealed the 34&times; CPU difference of Table&nbsp;2: "no faster" and "no lighter" are independent claims, and the dimension that matters depends on the deployment target. More generally, scale changed the problem qualitatively&mdash;rate limiting appears only beyond ~30 instruments&mdash;so guards discovered by measurement, not the initial design, made the pipeline production-ready.</p>
 
 <h2><span class="num">6</span>Conclusion</h2>
-<p>Moving the deterministic majority of a recurring LLM-assisted analysis into conventional code reduced per-run context consumption by three orders of magnitude, latency from minutes to ~0.1&nbsp;s, and CPU consumption by 42&times; relative to a subprocess-based variant, while making outputs reproducible and testable. The result runs unattended, hourly, at effectively zero cost, with the LLM retained only where it adds value: reading a ten-line digest and commenting on it. On the strength of these measurements, the digest command has been proposed for inclusion in the exchange's official CLI (bitbankinc/bitbank-lab-cli, Issue&nbsp;#21), where its deterministic computation naturally belongs. All code, benchmark procedures, and raw measurements are available in the artifacts repository.</p>
+<p>Moving the deterministic majority of a recurring LLM-assisted analysis into conventional code reduced per-run context consumption by three orders of magnitude, latency from minutes to ~0.1&nbsp;s, and CPU consumption by 34&times; relative to a subprocess-based variant, while making outputs reproducible and testable. The result runs unattended, hourly, at effectively zero cost, with the LLM retained only where it adds value: reading a ten-line digest and commenting on it. On the strength of these measurements, the digest command has been proposed for inclusion in the exchange's official CLI (bitbankinc/bitbank-lab-cli, Issue&nbsp;#21), where its deterministic computation naturally belongs. All code, benchmark procedures, and raw measurements are available in the artifacts repository.</p>
 
 </div>
 </body>

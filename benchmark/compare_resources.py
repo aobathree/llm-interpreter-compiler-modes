@@ -7,10 +7,10 @@
 - ピークメモリ（ジョブ全体 / 単一プロセス最大）
 - I/O転送量
 を Job Object のアカウンティングで正確に計測する。
-ポーリング方式と異なり、短命の子プロセス（CLI版は124個起動する）も取りこぼさない。
+ポーリング方式と異なり、短命の子プロセス（CLI版は88個起動する）も取りこぼさない。
 
 使い方:
-  python benchmark/compare_resources.py            # 3銘柄と62銘柄で各3回
+  python benchmark/compare_resources.py            # 3銘柄と44銘柄で各3回
   python benchmark/compare_resources.py --runs 5
 
 出力: 標準出力 + benchmark/results-resources.md
@@ -103,22 +103,20 @@ def run_in_job(binpath, pairs):
         "io_other_mb": acct.IoInfo.OtherTransferCount / 2**20,
     }
 
+# 旧ティッカー（現行取扱い44銘柄には含まれない）
+LEGACY_PAIRS = {"matic_jpy", "rndr_jpy", "mkr_jpy"}
+
 def tickers_ranked():
+    """公式取扱い銘柄（44種類・JPY建て）の24h売買代金降順ランキング。"""
     out = subprocess.run(["bitbank", "tickers", "--format=json", "--machine"],
                          capture_output=True, text=True, encoding="utf-8")
     rows = json.loads(out.stdout)["data"]
-    btc = next((float(r["last"]) for r in rows if r["pair"] == "btc_jpy"), None)
     ranked = []
     for r in rows:
-        pair, vol, last = r["pair"], float(r["vol"]), float(r["last"])
-        v = vol * last
-        if pair.endswith("_btc"):
-            if btc is None:
-                continue
-            v *= btc
-        elif not pair.endswith("_jpy"):
+        pair = r["pair"]
+        if not pair.endswith("_jpy") or pair in LEGACY_PAIRS:
             continue
-        ranked.append((pair, v))
+        ranked.append((pair, float(r["vol"]) * float(r["last"])))
     ranked.sort(key=lambda x: -x[1])
     return [p for p, _ in ranked]
 
